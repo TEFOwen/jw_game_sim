@@ -2,7 +2,7 @@ use crate::{
     card::{Card, Rank, Suit},
     evaluator::evaluate,
     game::play,
-    strategies::FlushNaive,
+    strategies::{FlushNaive, HaydenSimple},
 };
 
 mod card;
@@ -36,7 +36,7 @@ fn main() {
             let mut wins = 0;
             let mut total = 0;
             for _ in 0..num_games_per_thread {
-                if play::<FlushNaive>() {
+                if play::<HaydenSimple>() {
                     wins += 1;
                 }
                 total += 1;

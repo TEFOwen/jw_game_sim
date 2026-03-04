@@ -2,7 +2,7 @@
 
 use std::{
     fmt::Display,
-    ops::{BitAnd, BitOr, Not},
+    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -219,5 +219,17 @@ impl BitAnd for CardSet {
 
     fn bitand(self, rhs: Self) -> Self::Output {
         self.intersection(&rhs)
+    }
+}
+
+impl BitOrAssign for CardSet {
+    fn bitor_assign(&mut self, rhs: Self) {
+        self.0 |= rhs.0;
+    }
+}
+
+impl BitAndAssign for CardSet {
+    fn bitand_assign(&mut self, rhs: Self) {
+        self.0 &= rhs.0;
     }
 }
