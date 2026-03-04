@@ -49,7 +49,13 @@ fn main() {
     let mut wins = 0;
     let mut total = 0;
     for handle in handles {
-        let (thread_wins, thread_total) = handle.join().unwrap();
+        let (thread_wins, thread_total) = match handle.join() {
+            Err(e) => {
+                eprintln!("Thread panicked: {:?}", e);
+                continue;
+            }
+            Ok(result) => result,
+        };
         wins += thread_wins;
         total += thread_total;
     }
@@ -61,5 +67,9 @@ fn main() {
         num_threads
     );
 
-    println!("Win rate: {:.2}%", wins as f64 / total as f64 * 100.0);
+    println!(
+        "Win rate: {:.2}% over {} games",
+        wins as f64 / total as f64 * 100.0,
+        total
+    );
 }

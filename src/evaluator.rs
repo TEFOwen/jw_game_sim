@@ -54,9 +54,9 @@ impl Debug for HandRank {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HandType {
-    HighCard,
+    HighCard = 1,
     OnePair,
     TwoPair,
     ThreeOfAKind,
@@ -304,7 +304,7 @@ pub fn evaluate_many(cards: &[Card]) -> HandRank {
         .collect::<Vec<_>>();
     let mut straight_best =
         if rank_bools[12] && rank_bools[0] && rank_bools[1] && rank_bools[2] && rank_bools[3] {
-            Some(HandRank(HandType::Straight as i32 + 1))
+            Some(HandRank(((HandType::Straight as i32) << 12) + 1))
         } else {
             None
         };
@@ -317,7 +317,7 @@ pub fn evaluate_many(cards: &[Card]) -> HandRank {
             && rank_bools[i + 3]
             && rank_bools[i + 4]
         {
-            let hand_rank = HandRank((i as i32 + HandType::Straight as i32) + 1);
+            let hand_rank = HandRank(((HandType::Straight as i32) << 12) + 1 + i as i32);
             if straight_best.is_none() || hand_rank > straight_best.unwrap() {
                 straight_best = Some(hand_rank);
             }
