@@ -1,2 +1,2 @@
 # REQUIRES HADNRANKS.dat FILE
-See (poekr evaluator)[https://github.com/TEFOwen/poker]
+See [poker evaluator](https://github.com/TEFOwen/poker)
