@@ -8,11 +8,11 @@ use std::{
 
 use once_cell::sync::Lazy;
 
-use crate::card::{Card, Rank};
+use crate::card::{Card, CardSet, Rank};
 
 const HAND_RANKS_FILE_NAME: &str = "handranks.dat";
 
-pub static HAND_RANKS: Lazy<Vec<i32>> = Lazy::new(|| {
+pub static HAND_RANKS: Lazy<Box<[i32]>> = Lazy::new(|| {
     let mut hand_ranks = vec![0; 32487834];
     let file = File::open(HAND_RANKS_FILE_NAME)
         .expect(&format!("Could not open {}", HAND_RANKS_FILE_NAME));
@@ -24,7 +24,7 @@ pub static HAND_RANKS: Lazy<Vec<i32>> = Lazy::new(|| {
             .expect(&format!("Could not read from {}", HAND_RANKS_FILE_NAME));
         hand_ranks[i] = i32::from_le_bytes(buffer);
     }
-    hand_ranks
+    hand_ranks.into_boxed_slice()
 });
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -38,7 +38,7 @@ impl Into<i32> for HandRank {
 
 impl Display for HandRank {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{}", self.0)
+        write!(f, "0x{:X}", self.0)
     }
 }
 
@@ -50,7 +50,7 @@ impl HandRank {
 
 impl Debug for HandRank {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "{:?} ({})", self.hand_type(), self.0)
+        write!(f, "{:?} ({})", self.hand_type(), self)
     }
 }
 
@@ -104,228 +104,201 @@ impl Display for HandType {
     }
 }
 
-#[derive(Clone, Copy)]
-pub enum EvaluationStage {
-    Stage1(i32),
-    Stage2(i32),
-    Stage3(i32),
-    Stage4(i32),
-    Stage5(i32),
-    Stage6(i32),
-    Stage7(i32),
-}
+// pub fn evaluate(cards: &[i32]) -> HandRank {
+//     debug_assert!(
+//         [5, 6, 7].contains(&cards.len()),
+//         "Invalid number of cards (must be 5, 6, or 7)"
+//     );
+//     let mut rank = HAND_RANKS[53 + cards[0] as usize];
+//     rank = HAND_RANKS[(rank + cards[1]) as usize];
+//     rank = HAND_RANKS[(rank + cards[2]) as usize];
+//     rank = HAND_RANKS[(rank + cards[3]) as usize];
+//     rank = HAND_RANKS[(rank + cards[4]) as usize];
+//     if cards.len() >= 5 {
+//         rank = HAND_RANKS[(rank + cards[5]) as usize];
+//         if cards.len() >= 6 {
+//             HandRank(HAND_RANKS[(rank + cards[6]) as usize])
+//         } else {
+//             HandRank(HAND_RANKS[rank as usize])
+//         }
+//     } else {
+//         HandRank(HAND_RANKS[rank as usize])
+//     }
+// }
 
-impl EvaluationStage {
-    pub fn is_evaluatable(&self) -> bool {
-        matches!(
-            self,
-            EvaluationStage::Stage7(_) | EvaluationStage::Stage6(_) | EvaluationStage::Stage5(_)
-        )
-    }
-
-    pub fn is_final(&self) -> bool {
-        matches!(self, EvaluationStage::Stage7(_))
-    }
-
-    pub fn start(card: Card) -> Self {
-        EvaluationStage::Stage1(HAND_RANKS[53 + Into::<i32>::into(card) as usize])
-    }
-
-    pub fn next(self, card: Card) -> Self {
-        match self {
-            EvaluationStage::Stage1(rank) => {
-                EvaluationStage::Stage2(HAND_RANKS[(rank + Into::<i32>::into(card)) as usize])
-            }
-            EvaluationStage::Stage2(rank) => {
-                EvaluationStage::Stage3(HAND_RANKS[(rank + Into::<i32>::into(card)) as usize])
-            }
-            EvaluationStage::Stage3(rank) => {
-                EvaluationStage::Stage4(HAND_RANKS[(rank + Into::<i32>::into(card)) as usize])
-            }
-            EvaluationStage::Stage4(rank) => {
-                EvaluationStage::Stage5(HAND_RANKS[(rank + Into::<i32>::into(card)) as usize])
-            }
-            EvaluationStage::Stage5(rank) => {
-                EvaluationStage::Stage6(HAND_RANKS[(rank + Into::<i32>::into(card)) as usize])
-            }
-            EvaluationStage::Stage6(rank) => {
-                EvaluationStage::Stage7(HAND_RANKS[(rank + Into::<i32>::into(card)) as usize])
-            }
-            _ => panic!("Cannot add more cards to the stage"),
-        }
-    }
-
-    pub fn evaluate(self) -> HandRank {
-        match self {
-            EvaluationStage::Stage5(rank) | EvaluationStage::Stage6(rank) => {
-                HandRank(HAND_RANKS[rank as usize])
-            }
-            EvaluationStage::Stage7(rank) => HandRank(rank),
-            _ => panic!("Cannot evaluate stage"),
-        }
-    }
-
-    pub fn stage_num(&self) -> u32 {
-        match self {
-            EvaluationStage::Stage1(_) => 1,
-            EvaluationStage::Stage2(_) => 2,
-            EvaluationStage::Stage3(_) => 3,
-            EvaluationStage::Stage4(_) => 4,
-            EvaluationStage::Stage5(_) => 5,
-            EvaluationStage::Stage6(_) => 6,
-            EvaluationStage::Stage7(_) => 7,
-        }
-    }
-}
-
-pub fn evaluate(cards: &[Card]) -> HandRank {
+// TODO: Change evaluate function as above?
+#[inline(always)]
+pub fn evaluate(cards: CardSet) -> HandRank {
     debug_assert!(
         [5, 6, 7].contains(&cards.len()),
         "Invalid number of cards (must be 5, 6, or 7)"
     );
-    let mut stage = EvaluationStage::start(cards[0]);
-    for &card in &cards[1..] {
-        stage = stage.next(card);
-    }
-    stage.evaluate()
+    let iter = (1..=52).filter(|&i| cards.0 & (1 << (i - 1)) > 0);
+    evaluate_iter(iter)
 }
 
-pub fn evaluate_many(cards: &[Card]) -> HandRank {
+pub fn try_evaluate(cards: impl IntoIterator<Item = i32>) -> Option<HandRank> {
+    let mut iter = cards.into_iter();
+    let mut rank = HAND_RANKS[53 + iter.next()? as usize];
+    rank = HAND_RANKS[(rank + iter.next()?) as usize];
+    rank = HAND_RANKS[(rank + iter.next()?) as usize];
+    rank = HAND_RANKS[(rank + iter.next()?) as usize];
+    rank = HAND_RANKS[(rank + iter.next()?) as usize];
+    if let Some(card) = iter.next() {
+        rank = HAND_RANKS[(rank + card) as usize];
+        if let Some(card) = iter.next() {
+            Some(HandRank(HAND_RANKS[(rank + card) as usize]))
+        } else {
+            Some(HandRank(HAND_RANKS[rank as usize]))
+        }
+    } else {
+        Some(HandRank(HAND_RANKS[rank as usize]))
+    }
+}
+
+#[inline(always)]
+pub fn evaluate_iter(cards: impl IntoIterator<Item = i32>) -> HandRank {
+    let mut iter = cards.into_iter();
+    let mut rank = HAND_RANKS[53 + iter.next().unwrap() as usize];
+    rank = HAND_RANKS[(rank + iter.next().unwrap()) as usize];
+    rank = HAND_RANKS[(rank + iter.next().unwrap()) as usize];
+    rank = HAND_RANKS[(rank + iter.next().unwrap()) as usize];
+    rank = HAND_RANKS[(rank + iter.next().unwrap()) as usize];
+    if let Some(card) = iter.next() {
+        rank = HAND_RANKS[(rank + card) as usize];
+        if let Some(card) = iter.next() {
+            HandRank(HAND_RANKS[(rank + card) as usize])
+        } else {
+            HandRank(HAND_RANKS[rank as usize])
+        }
+    } else {
+        HandRank(HAND_RANKS[rank as usize])
+    }
+}
+
+const STRAIGHT_FLUSH_MASK: u64 = 0x11111;
+const STRAIGHT_FLUSH_WHEEL_MASK: u64 = 0x1111 + (1 << (Rank::Ace as i32 * 4));
+const FLUSH_MASK: u64 = 0x1111111111111;
+const QUADS_MASK: u64 = 0xF;
+
+pub fn evaluate_many(cards: CardSet) -> HandRank {
     if cards.len() <= 7 {
         return evaluate(cards);
     }
 
-    let mut sorted = cards.to_vec();
-    sorted.sort();
-    let mut ranks = [const { vec![] }; 13];
-    for card in &sorted {
-        ranks[card.rank() as usize].push(*card);
-    }
-
-    let mut suits = [const { vec![] }; 4];
-    for card in &sorted {
-        suits[card.suit() as usize].push(*card);
-    }
-
-    // Straight flush check
-    let mut suit_best = None;
-    for suit in 0..4 {
-        if suits[suit].len() >= 5 {
-            for i in 0..=suits[suit].len() - 5 {
-                let hand_rank = evaluate(&suits[suit][i..i + 5]);
-                if suit_best.is_none() || hand_rank > suit_best.unwrap() {
-                    suit_best = Some(hand_rank);
-                }
-            }
-
-            // Wheel check
-            if suits[suit].last().unwrap().rank() == Rank::Ace {
-                let hand_rank = evaluate(&[
-                    *suits[suit].last().unwrap(),
-                    suits[suit][0],
-                    suits[suit][1],
-                    suits[suit][2],
-                    suits[suit][3],
-                ]);
-                if suit_best.is_none() || hand_rank > suit_best.unwrap() {
-                    suit_best = Some(hand_rank);
-                }
+    let set_bit = cards.0;
+    for i in (0..=(13 - 5)).rev() {
+        for j in 0..4 {
+            let mask = STRAIGHT_FLUSH_MASK << (i * 4 + j);
+            if set_bit & mask == mask {
+                return HandRank(((HandType::StraightFlush as i32) << 12) + i as i32 + 2);
             }
         }
     }
 
-    if let Some(suit_best) = suit_best {
-        if suit_best.hand_type() == HandType::StraightFlush {
-            return suit_best;
+    for j in 0..4 {
+        let mask = STRAIGHT_FLUSH_WHEEL_MASK << j;
+        if set_bit & mask == mask {
+            return HandRank(((HandType::StraightFlush as i32) << 12) + 1);
         }
     }
 
-    // Quads
-    for rank in ranks.iter().rev() {
-        if rank.len() == 4 {
-            let kicker = sorted
-                .iter()
-                .rev()
-                .find(|&&card| card.rank() != rank[0].rank())
-                .unwrap();
-            return evaluate(
-                rank.clone()
-                    .into_iter()
-                    .chain(std::iter::once(*kicker))
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            );
-        }
-    }
-
-    // Full house or trips
+    let mut full_house = None;
     let mut trips = None;
-    for trip_rank in ranks.iter().rev() {
-        if trip_rank.len() == 3 {
-            for pair_rank in ranks.iter().rev() {
-                if pair_rank.len() == 2 {
-                    return evaluate(&[
-                        pair_rank[0],
-                        pair_rank[1],
-                        trip_rank[0],
-                        trip_rank[1],
-                        trip_rank[2],
-                    ]);
+    let mut rank_counts = [0; 13];
+    for rank in (0..13).rev() {
+        match (set_bit >> (rank * 4) & QUADS_MASK).count_ones() {
+            4 => {
+                let others = set_bit & !(0xF << (rank * 4));
+                let kicker = (51 - (others.leading_zeros() as i32 - (64 - 52))) / 4;
+                return HandRank(
+                    ((HandType::FourOfAKind as i32) << 12)
+                        + 1
+                        + rank * 12
+                        + kicker
+                        + if kicker < rank { 0 } else { -1 },
+                );
+            }
+            3 => {
+                if let Some(pair_rank) = (0..13)
+                    .rev()
+                    .find(|&i| i != rank && (set_bit & (QUADS_MASK << (i * 4))).count_ones() >= 2)
+                {
+                    if full_house.is_none() {
+                        full_house = Some(HandRank(
+                            ((HandType::FullHouse as i32) << 12)
+                                + 1
+                                + rank * 12
+                                + pair_rank
+                                + if pair_rank < rank { 0 } else { -1 },
+                        ));
+                    }
+                }
+                let kickers = (0..13)
+                    .rev()
+                    .filter_map(|i| {
+                        if i != rank && (set_bit & (QUADS_MASK << (i * 4))).count_ones() > 0 {
+                            Some(i * 4 + 1)
+                        } else {
+                            None
+                        }
+                    })
+                    .take(2);
+                let hand_rank = evaluate_iter(kickers.chain((1..=3).map(|i| rank * 4 + i)));
+
+                if trips.is_none() {
+                    trips = Some(hand_rank);
                 }
             }
-            let kickers = sorted
-                .iter()
-                .rev()
-                .filter(|&&card| card.rank() != trip_rank[0].rank())
-                .take(2)
-                .copied();
-            let hand_rank = evaluate(
-                trip_rank
-                    .clone()
-                    .into_iter()
-                    .chain(kickers)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            );
-            if trips.is_none() || hand_rank > trips.unwrap() {
-                trips = Some(hand_rank);
-            }
+            count => rank_counts[rank as usize] = count,
         }
     }
 
-    if let Some(suit_best) = suit_best {
-        return suit_best;
+    if let Some(full_house) = full_house {
+        return full_house;
+    }
+
+    if let Some(flush_rank) = (0..4)
+        .filter_map(|i| {
+            let bits = set_bit & (FLUSH_MASK << i);
+            if bits.count_ones() < 5 {
+                return None;
+            }
+            try_evaluate(
+                (0..13)
+                    .rev()
+                    .filter_map(|j| {
+                        if bits & (0xF << (j * 4)) != 0 {
+                            Some(j * 4 + 1)
+                        } else {
+                            None
+                        }
+                    })
+                    .take(5),
+            )
+        })
+        .max()
+    {
+        return flush_rank;
     }
 
     // Wheel check
-    let rank_bools = ranks
-        .iter()
-        .map(|rank| !rank.is_empty())
-        .collect::<Vec<_>>();
-    let mut straight_best =
-        if rank_bools[12] && rank_bools[0] && rank_bools[1] && rank_bools[2] && rank_bools[3] {
-            Some(HandRank(((HandType::Straight as i32) << 12) + 1))
-        } else {
-            None
-        };
+    let mut ranks = 0u16;
 
-    // Straight check
-    for i in 0..=8 {
-        if rank_bools[i]
-            && rank_bools[i + 1]
-            && rank_bools[i + 2]
-            && rank_bools[i + 3]
-            && rank_bools[i + 4]
-        {
-            let hand_rank = HandRank(((HandType::Straight as i32) << 12) + 1 + i as i32);
-            if straight_best.is_none() || hand_rank > straight_best.unwrap() {
-                straight_best = Some(hand_rank);
-            }
+    for rank in 0..13 {
+        if set_bit & (0xF << (rank * 4)) > 0 {
+            ranks |= 1 << rank;
         }
     }
 
-    if let Some(straight_best) = straight_best {
-        return straight_best;
+    for start in (0..=8).rev() {
+        if (ranks >> start) & 0b11111 == 0b11111 {
+            return HandRank(((HandType::Straight as i32) << 12) + 2 + start);
+        }
+    }
+
+    if ranks & 0b1000000001111 == 0b1000000001111 {
+        return HandRank(((HandType::Straight as i32) << 12) + 1);
     }
 
     if let Some(trips) = trips {
@@ -333,34 +306,45 @@ pub fn evaluate_many(cards: &[Card]) -> HandRank {
     }
 
     // Pair check
-    let mut pair_best = None;
-    for rank in ranks.iter().rev() {
-        if rank.len() == 2 {
-            let kickers = sorted
-                .iter()
+    for rank in (0..13).rev() {
+        if rank_counts[rank as usize] == 2 {
+            if let Some(pair2) = (0..13)
                 .rev()
-                .filter(|&&card| card.rank() != rank[0].rank())
-                .take(3)
-                .copied();
-            let hand_rank = evaluate(
-                rank.clone()
-                    .into_iter()
-                    .chain(kickers)
-                    .collect::<Vec<_>>()
-                    .as_slice(),
-            );
-            if pair_best.is_none() || hand_rank > pair_best.unwrap() {
-                pair_best = Some(hand_rank);
+                .find(|&rank2| rank2 != rank && rank_counts[rank2 as usize] == 2)
+            {
+                let others = set_bit & !(0xF << (rank * 4) | 0xF << (pair2 * 4));
+                let kicker = (51 - (others.leading_zeros() as i32 - (64 - 52))) / 4;
+                return evaluate_iter([
+                    rank * 4 + 1,
+                    rank * 4 + 2,
+                    pair2 * 4 + 1,
+                    pair2 * 4 + 2,
+                    kicker * 4 + 1,
+                ]);
             }
+            let kickers = (0..13)
+                .rev()
+                .filter_map(|i| {
+                    if i != rank && rank_counts[i as usize] > 0 {
+                        Some(i * 4 + 1)
+                    } else {
+                        None
+                    }
+                })
+                .take(3)
+                .chain(std::iter::once(rank * 4 + 1))
+                .chain(std::iter::once(rank * 4 + 2));
+            return evaluate_iter(kickers);
         }
     }
 
-    if let Some(pair_best) = pair_best {
-        return pair_best;
-    }
-
     // High card
-    evaluate(&sorted[sorted.len() - 5..])
+    evaluate_iter(
+        (0..13)
+            .rev()
+            .filter(|&i| rank_counts[i as usize] > 0)
+            .take(5),
+    )
 }
 
 #[cfg(test)]
@@ -371,19 +355,30 @@ mod tests {
 
     #[test]
     fn test_hand_rank() {
-        let hand_rank = evaluate(&[
+        let hand_rank = evaluate(CardSet::from_cards(&[
             Card::new(Rank::Two, Suit::Spades),
             Card::new(Rank::Two, Suit::Hearts),
             Card::new(Rank::Two, Suit::Diamonds),
             Card::new(Rank::Two, Suit::Clubs),
             Card::new(Rank::Three, Suit::Spades),
-        ]);
+        ]));
         assert!(hand_rank.hand_type() == HandType::FourOfAKind);
+
+        let hand_rank = evaluate(CardSet::from_cards(&[
+            Card::new(Rank::Ace, Suit::Spades),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Two, Suit::Spades),
+            Card::new(Rank::Three, Suit::Spades),
+            Card::new(Rank::King, Suit::Hearts),
+            Card::new(Rank::Four, Suit::Spades),
+            Card::new(Rank::Five, Suit::Spades),
+        ]));
+        assert!(hand_rank.0 == 0x9001);
     }
 
     #[test]
     fn test_evaluate_many() {
-        let hand_rank = evaluate_many(&[
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
             Card::new(Rank::Two, Suit::Spades),
             Card::new(Rank::Two, Suit::Hearts),
             Card::new(Rank::Two, Suit::Diamonds),
@@ -395,7 +390,228 @@ mod tests {
             Card::new(Rank::Ace, Suit::Spades),
             Card::new(Rank::Ten, Suit::Spades),
             Card::new(Rank::Jack, Suit::Spades),
-        ]);
+        ]));
         assert!(hand_rank.hand_type() == HandType::StraightFlush);
+
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
+            Card::new(Rank::King, Suit::Spades),
+            Card::new(Rank::King, Suit::Hearts),
+            Card::new(Rank::King, Suit::Diamonds),
+            Card::new(Rank::King, Suit::Clubs),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Jack, Suit::Hearts),
+            Card::new(Rank::Jack, Suit::Clubs),
+            Card::new(Rank::Four, Suit::Hearts),
+            Card::new(Rank::Jack, Suit::Spades),
+        ]));
+        assert!(
+            hand_rank
+                == evaluate(CardSet::from_cards(&[
+                    Card::new(Rank::King, Suit::Spades),
+                    Card::new(Rank::King, Suit::Hearts),
+                    Card::new(Rank::King, Suit::Diamonds),
+                    Card::new(Rank::King, Suit::Clubs),
+                    Card::new(Rank::Jack, Suit::Spades),
+                ]))
+        );
+
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
+            Card::new(Rank::King, Suit::Spades),
+            Card::new(Rank::King, Suit::Hearts),
+            Card::new(Rank::King, Suit::Diamonds),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Jack, Suit::Hearts),
+            Card::new(Rank::Four, Suit::Hearts),
+        ]));
+        assert!(
+            hand_rank
+                == evaluate(CardSet::from_cards(&[
+                    Card::new(Rank::King, Suit::Spades),
+                    Card::new(Rank::King, Suit::Hearts),
+                    Card::new(Rank::King, Suit::Diamonds),
+                    Card::new(Rank::Ten, Suit::Clubs),
+                    Card::new(Rank::Jack, Suit::Spades),
+                ]))
+        );
+
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
+            Card::new(Rank::Five, Suit::Spades),
+            Card::new(Rank::Five, Suit::Hearts),
+            Card::new(Rank::Five, Suit::Diamonds),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Two, Suit::Hearts),
+            Card::new(Rank::Three, Suit::Hearts),
+        ]));
+        assert!(
+            hand_rank
+                == evaluate(CardSet::from_cards(&[
+                    Card::new(Rank::Five, Suit::Spades),
+                    Card::new(Rank::Five, Suit::Hearts),
+                    Card::new(Rank::Five, Suit::Diamonds),
+                    Card::new(Rank::Ten, Suit::Clubs),
+                    Card::new(Rank::Three, Suit::Spades),
+                ]))
+        );
+
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
+            Card::new(Rank::Two, Suit::Spades),
+            Card::new(Rank::Two, Suit::Hearts),
+            Card::new(Rank::Two, Suit::Diamonds),
+            Card::new(Rank::Two, Suit::Clubs),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Jack, Suit::Hearts),
+            Card::new(Rank::Jack, Suit::Clubs),
+            Card::new(Rank::Four, Suit::Hearts),
+            Card::new(Rank::Jack, Suit::Spades),
+        ]));
+        assert!(
+            hand_rank
+                == evaluate(CardSet::from_cards(&[
+                    Card::new(Rank::Two, Suit::Spades),
+                    Card::new(Rank::Two, Suit::Hearts),
+                    Card::new(Rank::Two, Suit::Diamonds),
+                    Card::new(Rank::Two, Suit::Clubs),
+                    Card::new(Rank::Jack, Suit::Spades),
+                ]))
+        );
+
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
+            Card::new(Rank::Two, Suit::Spades),
+            Card::new(Rank::Seven, Suit::Spades),
+            Card::new(Rank::Ace, Suit::Diamonds),
+            Card::new(Rank::Six, Suit::Clubs),
+            Card::new(Rank::King, Suit::Clubs),
+            Card::new(Rank::Five, Suit::Hearts),
+            Card::new(Rank::Two, Suit::Hearts),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Four, Suit::Hearts),
+        ]));
+        assert!(
+            hand_rank
+                == evaluate(CardSet::from_cards(&[
+                    Card::new(Rank::Two, Suit::Spades),
+                    Card::new(Rank::Two, Suit::Hearts),
+                    Card::new(Rank::Ace, Suit::Diamonds),
+                    Card::new(Rank::King, Suit::Clubs),
+                    Card::new(Rank::Ten, Suit::Spades),
+                ]))
+        );
+
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
+            Card::new(Rank::Two, Suit::Spades),
+            Card::new(Rank::Seven, Suit::Spades),
+            Card::new(Rank::Ace, Suit::Diamonds),
+            Card::new(Rank::Six, Suit::Clubs),
+            Card::new(Rank::King, Suit::Clubs),
+            Card::new(Rank::Five, Suit::Clubs),
+            Card::new(Rank::Two, Suit::Hearts),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Five, Suit::Hearts),
+        ]));
+        assert!(
+            hand_rank
+                == evaluate(CardSet::from_cards(&[
+                    Card::new(Rank::Two, Suit::Spades),
+                    Card::new(Rank::Two, Suit::Hearts),
+                    Card::new(Rank::Ace, Suit::Diamonds),
+                    Card::new(Rank::Five, Suit::Clubs),
+                    Card::new(Rank::Five, Suit::Spades),
+                ]))
+        );
+
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
+            Card::new(Rank::Two, Suit::Spades),
+            Card::new(Rank::Seven, Suit::Spades),
+            Card::new(Rank::Six, Suit::Spades),
+            Card::new(Rank::King, Suit::Spades),
+            Card::new(Rank::Three, Suit::Spades),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Ace, Suit::Spades),
+            // --
+            Card::new(Rank::Three, Suit::Diamonds),
+            Card::new(Rank::Seven, Suit::Diamonds),
+            Card::new(Rank::Four, Suit::Diamonds),
+            Card::new(Rank::Six, Suit::Diamonds),
+            Card::new(Rank::King, Suit::Diamonds),
+        ]));
+        assert!(
+            hand_rank
+                == evaluate(CardSet::from_cards(&[
+                    Card::new(Rank::Seven, Suit::Spades),
+                    Card::new(Rank::Six, Suit::Spades),
+                    Card::new(Rank::King, Suit::Spades),
+                    Card::new(Rank::Ten, Suit::Spades),
+                    Card::new(Rank::Ace, Suit::Spades),
+                ]))
+        );
+
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
+            Card::new(Rank::Two, Suit::Spades),
+            Card::new(Rank::Two, Suit::Hearts),
+            Card::new(Rank::Two, Suit::Diamonds),
+            Card::new(Rank::Five, Suit::Clubs),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Jack, Suit::Hearts),
+            Card::new(Rank::Jack, Suit::Clubs),
+            Card::new(Rank::Four, Suit::Hearts),
+            Card::new(Rank::Jack, Suit::Spades),
+        ]));
+        assert!(
+            hand_rank
+                == evaluate(CardSet::from_cards(&[
+                    Card::new(Rank::Two, Suit::Spades),
+                    Card::new(Rank::Two, Suit::Hearts),
+                    Card::new(Rank::Jack, Suit::Diamonds),
+                    Card::new(Rank::Jack, Suit::Clubs),
+                    Card::new(Rank::Jack, Suit::Spades),
+                ]))
+        );
+
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
+            Card::new(Rank::Two, Suit::Spades),
+            Card::new(Rank::Ace, Suit::Hearts),
+            Card::new(Rank::Two, Suit::Diamonds),
+            Card::new(Rank::Five, Suit::Clubs),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Jack, Suit::Hearts),
+            Card::new(Rank::Jack, Suit::Clubs),
+            Card::new(Rank::Four, Suit::Hearts),
+            Card::new(Rank::Three, Suit::Spades),
+        ]));
+        assert!(
+            hand_rank
+                == evaluate(CardSet::from_cards(&[
+                    Card::new(Rank::Ace, Suit::Spades),
+                    Card::new(Rank::Two, Suit::Hearts),
+                    Card::new(Rank::Three, Suit::Diamonds),
+                    Card::new(Rank::Four, Suit::Clubs),
+                    Card::new(Rank::Five, Suit::Spades),
+                ]))
+        );
+
+        let hand_rank = evaluate_many(CardSet::from_cards(&[
+            Card::new(Rank::Two, Suit::Spades),
+            Card::new(Rank::Ace, Suit::Hearts),
+            Card::new(Rank::Two, Suit::Diamonds),
+            Card::new(Rank::Five, Suit::Clubs),
+            Card::new(Rank::Ten, Suit::Spades),
+            Card::new(Rank::Jack, Suit::Hearts),
+            Card::new(Rank::Jack, Suit::Clubs),
+            Card::new(Rank::Four, Suit::Hearts),
+            Card::new(Rank::Three, Suit::Spades),
+            Card::new(Rank::Six, Suit::Diamonds),
+            Card::new(Rank::Seven, Suit::Spades),
+            Card::new(Rank::Eight, Suit::Clubs),
+        ]));
+        assert!(
+            hand_rank
+                == evaluate(CardSet::from_cards(&[
+                    Card::new(Rank::Six, Suit::Spades),
+                    Card::new(Rank::Eight, Suit::Hearts),
+                    Card::new(Rank::Seven, Suit::Diamonds),
+                    Card::new(Rank::Four, Suit::Clubs),
+                    Card::new(Rank::Five, Suit::Spades),
+                ]))
+        );
     }
 }

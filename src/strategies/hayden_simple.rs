@@ -1,10 +1,11 @@
 use crate::{
-    card::{Card, CardSet, Rank, Suit},
+    card::{Card, CardSet, Rank},
     evaluator::{HandType, evaluate_many},
     game::Strategy,
 };
 
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct HaydenSimple {
     force_flush: bool,
 }
@@ -81,7 +82,7 @@ fn is_ahead(hand: &[Card], dealers_hand: &[Card]) -> bool {
         return false;
     }
 
-    let dealer_rank = evaluate_many(dealers_hand);
+    let dealer_rank = evaluate_many(CardSet::from_cards(dealers_hand));
 
     if rank_counts.iter().max().unwrap_or(&0) == &4 {
         return dealer_rank.hand_type() < HandType::FourOfAKind;
@@ -107,11 +108,10 @@ fn is_ahead(hand: &[Card], dealers_hand: &[Card]) -> bool {
 }
 
 impl Strategy for HaydenSimple {
-    fn decide(
-        &mut self,
-        hand: &[crate::card::Card],
-        dealers_hand: &[crate::card::Card],
-    ) -> crate::card::CardSet {
+    fn decide(&mut self, hand: CardSet, dealers_hand: CardSet) -> crate::card::CardSet {
+        let hand = hand.to_cards();
+        let dealers_hand = dealers_hand.to_cards();
+
         match hand.len() {
             0 => CardSet::from_cards(
                 (1..=52)
@@ -124,7 +124,7 @@ impl Strategy for HaydenSimple {
                     .as_slice(),
             ),
             1 => {
-                if dealers_hand.len() >= 8 && is_ahead(hand, dealers_hand) {
+                if dealers_hand.len() >= 8 && is_ahead(&hand, &dealers_hand) {
                     return !CardSet::default();
                 }
 
@@ -147,7 +147,7 @@ impl Strategy for HaydenSimple {
                 top_up_set(set, 19)
             }
             2 => {
-                if dealers_hand.len() >= 8 && is_ahead(hand, dealers_hand) {
+                if dealers_hand.len() >= 8 && is_ahead(&hand, &dealers_hand) {
                     return !CardSet::default();
                 }
 
@@ -184,7 +184,7 @@ impl Strategy for HaydenSimple {
                 top_up_set(set, 19)
             }
             3 => {
-                if dealers_hand.len() >= 8 && is_ahead(hand, dealers_hand) {
+                if dealers_hand.len() >= 8 && is_ahead(&hand, &dealers_hand) {
                     return !CardSet::default();
                 }
 
@@ -236,7 +236,7 @@ impl Strategy for HaydenSimple {
                 }
             }
             4 => {
-                let ahead = is_ahead(hand, dealers_hand);
+                let ahead = is_ahead(&hand, &dealers_hand);
                 if dealers_hand.len() >= 8 && ahead {
                     return !CardSet::default();
                 }

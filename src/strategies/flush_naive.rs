@@ -4,15 +4,16 @@ use crate::{
 };
 
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct FlushNaive;
 
 impl Strategy for FlushNaive {
-    fn decide(&mut self, hand: &[Card], _dealers_hand: &[Card]) -> CardSet {
+    fn decide(&mut self, hand: CardSet, _dealers_hand: CardSet) -> CardSet {
         if hand.is_empty() {
             return !CardSet::default();
         }
 
-        let suit = hand[0].suit();
+        let suit = hand.to_cards()[0].suit();
         (1..=52)
             .map(Card::from)
             .filter(|card| card.suit() == suit)

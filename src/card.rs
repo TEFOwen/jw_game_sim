@@ -1,9 +1,11 @@
 #![allow(dead_code)]
 
 use std::{
-    fmt::Display,
+    fmt::{Debug, Display},
     ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, Not},
 };
+
+use rand::{Rng, rngs::SmallRng};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Suit {
@@ -65,6 +67,7 @@ impl From<i32> for Rank {
 
 /// Card represented as 1-52, 2s, 2h, 2d, 2c, ..., As, Ah, Ad, Ac
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(transparent)]
 pub struct Card(i32);
 
 impl Card {
@@ -150,16 +153,16 @@ impl<'a> TryFrom<&'a str> for Card {
     }
 }
 
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(transparent)]
-pub struct CardSet(u64);
+pub struct CardSet(pub u64);
 
 impl CardSet {
     pub fn insert(&mut self, card: Card) {
         self.0 |= 1 << (card.0 - 1);
     }
 
-    pub fn contains(&self, card: &Card) -> bool {
+    pub fn contains(&self, card: Card) -> bool {
         (self.0 & (1 << (card.0 - 1))) != 0
     }
 
@@ -196,6 +199,40 @@ impl CardSet {
     pub fn intersection(&self, other: &CardSet) -> CardSet {
         CardSet(self.0 & other.0)
     }
+
+    pub fn remove(&mut self, card: Card) {
+        self.0 &= !(1 << (card.0 - 1));
+    }
+
+    #[inline(always)]
+    pub fn random_from(&self, rng: &mut SmallRng) -> Card {
+        let mut target = rng.next_u64() as usize % self.len();
+
+        let mut bits = self.0;
+        while target > 0 {
+            bits &= bits - 1;
+            target -= 1;
+        }
+
+        let idx = bits.trailing_zeros();
+        Card::from(idx as i32 + 1)
+    }
+}
+
+impl Display for CardSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CardSet(0x{:X})", self.0)
+    }
+}
+
+impl Debug for CardSet {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "CardSet {{ ")?;
+        for card in self.to_cards() {
+            write!(f, "{}, ", card)?;
+        }
+        write!(f, "}}")
+    }
 }
 
 impl Not for CardSet {
@@ -231,5 +268,38 @@ impl BitOrAssign for CardSet {
 impl BitAndAssign for CardSet {
     fn bitand_assign(&mut self, rhs: Self) {
         self.0 &= rhs.0;
+    }
+}
+
+impl IntoIterator for CardSet {
+    type Item = Card;
+
+    fn into_iter(self) -> Self::IntoIter {
+        CardSetIterator {
+            bit_set: self.0,
+            index: 0,
+        }
+    }
+
+    type IntoIter = CardSetIterator;
+}
+
+pub struct CardSetIterator {
+    bit_set: u64,
+    index: i32,
+}
+
+impl Iterator for CardSetIterator {
+    type Item = Card;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.index < 52 {
+            let i = self.index;
+            self.index += 1;
+            if (self.bit_set & (1 << i)) != 0 {
+                return Some(Card(i + 1));
+            }
+        }
+        None
     }
 }
